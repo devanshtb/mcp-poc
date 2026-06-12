@@ -24,7 +24,7 @@ QDRANT_URL     = os.environ["QDRANT_URL"]
 QDRANT_API_KEY = os.environ["QDRANT_API_KEY"]
 COLLECTION     = "knowledge_base"
 DENSE_MODEL    = "sentence-transformers/all-MiniLM-L6-v2"
-SPARSE_MODEL   = "prithivida/Splade_PP_en_v1"
+SPARSE_MODEL   = "Qdrant/bm25"
 TOP_K_DEFAULT  = 5
 
 # ── Globals ───────────────────────────────────────────────────────────────────
