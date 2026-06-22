@@ -1,6 +1,6 @@
 """
 server.py  —  Knowledge base MCP server (read-only)
-Hybrid search via Qdrant: dense (all-MiniLM-L6-v2) + sparse (SPLADE) + RRF.
+Hybrid search via Qdrant: dense (all-MiniLM-L6-v2) + Qdrant/BM25 + RRF.
 
 Tools:
   search(query, top_k)   — hybrid search, returns IDs  [ChatGPT Deep Research]
@@ -13,7 +13,10 @@ import os
 import asyncio
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
+from fastembed import TextEmbedding, SparseTextEmbedding
 from fastmcp import FastMCP
+from fastmcp.server.dependencies import CurrentAccessToken
+from fastmcp.server.auth.providers.in_memory import InMemoryOAuthProvider
 from qdrant_client import AsyncQdrantClient, models
 
 load_dotenv()
@@ -37,7 +40,6 @@ _dense_model  = None
 _sparse_model = None
 
 def _load_models():
-    from fastembed import TextEmbedding, SparseTextEmbedding
     global _dense_model, _sparse_model
     _dense_model  = TextEmbedding(DENSE_MODEL)
     _sparse_model = SparseTextEmbedding(SPARSE_MODEL)
@@ -66,14 +68,43 @@ async def lifespan(server):
     await qdrant.close()
     print("Qdrant client closed.")
 
-# ── FastMCP ───────────────────────────────────────────────────────────────────
+# ── FastMCP server setup ──────────────────────────────────────────────────────
 
-mcp = FastMCP("Knowledge Base", lifespan=lifespan)
+BASE_URL = os.environ.get("BASE_URL", "http://localhost:8000")
+
+auth = InMemoryOAuthProvider(
+    base_url=BASE_URL
+)
+
+mcp = FastMCP("Knowledge Base", lifespan=lifespan, auth=auth)
+
+# ── RBAC Utility ─────────────────────────────────────────────────────────────
+
+def get_role_filter(token: CurrentAccessToken) -> models.Filter | None:
+    """Return a Qdrant Filter based on user's role/scopes."""
+    if not token:
+        return None
+        
+    scopes = token.scopes or []
+    
+    if "admin" in scopes or "Admin" in scopes:
+        return None  # Admin can access everything
+    
+    # User can access documents with role 'public' or any of their specific scopes
+    allowed_roles = scopes + ["public"]
+    return models.Filter(
+        must=[
+            models.FieldCondition(
+                key="role",
+                match=models.MatchAny(any=allowed_roles),
+            )
+        ]
+    )
 
 # ── Tool 1: search ─────────────────────────────────────────────────────────────
 
 @mcp.tool
-async def search(query: str, top_k: int = TOP_K_DEFAULT) -> dict:
+async def search(query: str, token: CurrentAccessToken, top_k: int = TOP_K_DEFAULT) -> dict:
     """
     Hybrid search across the knowledge base (semantic + keyword).
     Returns a list of point IDs ranked by relevance.
@@ -109,6 +140,7 @@ async def search(query: str, top_k: int = TOP_K_DEFAULT) -> dict:
         ],
         # Qdrant's built-in RRF fusion across both prefetch results
         query=models.FusionQuery(fusion=models.Fusion.RRF),
+        query_filter=get_role_filter(token),
         limit=top_k,
         with_payload=True,
     )
@@ -119,7 +151,7 @@ async def search(query: str, top_k: int = TOP_K_DEFAULT) -> dict:
 # ── Tool 2: fetch ─────────────────────────────────────────────────────────────
 
 @mcp.tool
-async def fetch(id: str) -> dict:
+async def fetch(id: str, token: CurrentAccessToken) -> dict:
     """
     Fetch the full content of a chunk by its point ID.
     Use IDs returned by `search`.
@@ -138,6 +170,14 @@ async def fetch(id: str) -> dict:
         return {"error": f"Point {id} not found."}
 
     payload = results[0].payload or {}
+    
+    # Enforce RBAC
+    if token:
+        doc_role = payload.get("role", "public")
+        scopes = token.scopes or []
+        if "admin" not in scopes and "Admin" not in scopes and doc_role not in scopes and doc_role != "public":
+            return {"error": f"Unauthorized. Point requires role '{doc_role}'."}
+
     return {
         "id":           id,
         "content":      payload.get("content", ""),
@@ -154,7 +194,7 @@ async def fetch(id: str) -> dict:
 # ── Tool 3: list_documents ────────────────────────────────────────────────────
 
 @mcp.tool
-async def list_documents() -> dict:
+async def list_documents(token: CurrentAccessToken) -> dict:
     """
     List all documents available in the knowledge base.
     Returns document IDs, titles, and chunk counts.
@@ -165,6 +205,7 @@ async def list_documents() -> dict:
     while True:
         result, offset = await qdrant.scroll(
             collection_name=COLLECTION,
+            scroll_filter=get_role_filter(token),
             with_payload=True,
             with_vectors=False,
             limit=100,
@@ -191,7 +232,7 @@ async def list_documents() -> dict:
 # ── Tool 4: get_document ──────────────────────────────────────────────────────
 
 @mcp.tool
-async def get_document(id: str) -> dict:
+async def get_document(id: str, token: CurrentAccessToken) -> dict:
     """
     Retrieve the full reassembled text of a document by its document_id.
     Use `list_documents` to get valid document IDs.
@@ -201,18 +242,21 @@ async def get_document(id: str) -> dict:
     """
     all_chunks = []
     offset = None
+    
+    role_filter = get_role_filter(token)
+    must_conditions = [
+        models.FieldCondition(
+            key="document_id",
+            match=models.MatchValue(value=id),
+        )
+    ]
+    if role_filter and role_filter.must:
+        must_conditions.extend(role_filter.must)
 
     while True:
         result, offset = await qdrant.scroll(
             collection_name=COLLECTION,
-            scroll_filter=models.Filter(
-                must=[
-                    models.FieldCondition(
-                        key="document_id",
-                        match=models.MatchValue(value=id),
-                    )
-                ]
-            ),
+            scroll_filter=models.Filter(must=must_conditions),
             with_payload=True,
             with_vectors=False,
             limit=100,

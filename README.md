@@ -1,7 +1,7 @@
 # Knowledge Base MCP Server (Qdrant)
 
 Read-only MCP server with hybrid search — dense semantic (all-MiniLM-L6-v2) +
-sparse keyword (SPLADE via FastEmbed) — fused with Qdrant's built-in RRF.
+sparse keyword (BM-25) — fused with Qdrant's built-in RRF.
 
 ## Stack
 
