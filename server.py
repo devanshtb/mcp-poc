@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 from fastembed import TextEmbedding, SparseTextEmbedding
 from fastmcp import FastMCP
 from fastmcp.server.dependencies import CurrentAccessToken
+from fastmcp.server.auth import AccessToken
 from fastmcp.server.auth.providers.in_memory import InMemoryOAuthProvider
 from qdrant_client import AsyncQdrantClient, models
 
@@ -80,7 +81,7 @@ mcp = FastMCP("Knowledge Base", lifespan=lifespan, auth=auth)
 
 # ── RBAC Utility ─────────────────────────────────────────────────────────────
 
-def get_role_filter(token: CurrentAccessToken) -> models.Filter | None:
+def get_role_filter(token: AccessToken | None) -> models.Filter | None:
     """Return a Qdrant Filter based on user's role/scopes."""
     if not token:
         return None
@@ -104,7 +105,7 @@ def get_role_filter(token: CurrentAccessToken) -> models.Filter | None:
 # ── Tool 1: search ─────────────────────────────────────────────────────────────
 
 @mcp.tool
-async def search(query: str, token: CurrentAccessToken, top_k: int = TOP_K_DEFAULT) -> dict:
+async def search(query: str, token: AccessToken = CurrentAccessToken(), top_k: int = TOP_K_DEFAULT) -> dict:
     """
     Hybrid search across the knowledge base (semantic + keyword).
     Returns a list of point IDs ranked by relevance.
@@ -151,7 +152,7 @@ async def search(query: str, token: CurrentAccessToken, top_k: int = TOP_K_DEFAU
 # ── Tool 2: fetch ─────────────────────────────────────────────────────────────
 
 @mcp.tool
-async def fetch(id: str, token: CurrentAccessToken) -> dict:
+async def fetch(id: str, token: AccessToken = CurrentAccessToken()) -> dict:
     """
     Fetch the full content of a chunk by its point ID.
     Use IDs returned by `search`.
@@ -194,7 +195,7 @@ async def fetch(id: str, token: CurrentAccessToken) -> dict:
 # ── Tool 3: list_documents ────────────────────────────────────────────────────
 
 @mcp.tool
-async def list_documents(token: CurrentAccessToken) -> dict:
+async def list_documents(token: AccessToken = CurrentAccessToken()) -> dict:
     """
     List all documents available in the knowledge base.
     Returns document IDs, titles, and chunk counts.
@@ -232,7 +233,7 @@ async def list_documents(token: CurrentAccessToken) -> dict:
 # ── Tool 4: get_document ──────────────────────────────────────────────────────
 
 @mcp.tool
-async def get_document(id: str, token: CurrentAccessToken) -> dict:
+async def get_document(id: str, token: AccessToken = CurrentAccessToken()) -> dict:
     """
     Retrieve the full reassembled text of a document by its document_id.
     Use `list_documents` to get valid document IDs.
