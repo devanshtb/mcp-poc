@@ -213,17 +213,13 @@ async def fetch(id: str, token: AccessToken = CurrentAccessToken()) -> dict:
 # ── Tool 3: list_documents ────────────────────────────────────────────────────
 
 @mcp.tool
-async def list_documents(token: AccessToken = CurrentAccessToken()) -> dict:
+async def list_documents(token: AccessToken = CurrentAccessToken()) -> str:
     """
     List all documents in the Qdrant knowledge base.
     Only returns documents the user is authorized to see based on their Auth0 scopes.
     """
+    email = "Unknown"
     if token:
-        print(f"\n--- [AUTH LOG] ---")
-        print(f"Token Scopes: {token.scopes}")
-        print(f"Token Claims: {token.claims}")
-        
-        # Fetch the user's actual email from Auth0 using the Access Token
         try:
             import urllib.request
             import json
@@ -231,12 +227,10 @@ async def list_documents(token: AccessToken = CurrentAccessToken()) -> dict:
             req.add_header("Authorization", f"Bearer {token.token}")
             with urllib.request.urlopen(req) as response:
                 userinfo = json.loads(response.read())
-                print(f"User Email: {userinfo.get('email', 'Not provided by Auth0')}")
+                email = userinfo.get("email", "Unknown")
         except Exception as e:
-            print(f"Failed to fetch email: {e}")
+            email = f"Error fetching email: {e}"
             
-        print(f"------------------\n")
-        
     f = get_role_filter(token)
     
     seen: dict[str, dict] = {}
