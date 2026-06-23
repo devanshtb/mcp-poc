@@ -17,7 +17,7 @@ from fastembed import TextEmbedding, SparseTextEmbedding
 from fastmcp import FastMCP
 from fastmcp.server.dependencies import CurrentAccessToken
 from fastmcp.server.auth import AccessToken
-from fastmcp.server.auth.providers.in_memory import InMemoryOAuthProvider
+from fastmcp.server.auth.providers.auth0 import Auth0Provider
 from qdrant_client import AsyncQdrantClient, models
 
 load_dotenv()
@@ -72,10 +72,23 @@ async def lifespan(server):
 # ── FastMCP server setup ──────────────────────────────────────────────────────
 
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:8000")
+AUTH0_DOMAIN = os.environ.get("AUTH0_DOMAIN")
+AUTH0_CLIENT_ID = os.environ.get("AUTH0_CLIENT_ID")
+AUTH0_CLIENT_SECRET = os.environ.get("AUTH0_CLIENT_SECRET")
+AUTH0_AUDIENCE = os.environ.get("AUTH0_AUDIENCE")
 
-auth = InMemoryOAuthProvider(
-    base_url=BASE_URL
-)
+if AUTH0_DOMAIN and AUTH0_CLIENT_ID and AUTH0_CLIENT_SECRET and AUTH0_AUDIENCE:
+    auth = Auth0Provider(
+        config_url=f"https://{AUTH0_DOMAIN}/.well-known/openid-configuration",
+        client_id=AUTH0_CLIENT_ID,
+        client_secret=AUTH0_CLIENT_SECRET,
+        audience=AUTH0_AUDIENCE,
+        base_url=BASE_URL
+    )
+    print("Auth0 provider configured.")
+else:
+    print("Warning: Auth0 environment variables missing. Running without authentication enforcement.")
+    auth = None
 
 mcp = FastMCP("Knowledge Base", lifespan=lifespan, auth=auth)
 
@@ -83,10 +96,7 @@ mcp = FastMCP("Knowledge Base", lifespan=lifespan, auth=auth)
 
 def get_role_filter(token: AccessToken | None) -> models.Filter | None:
     """Return a Qdrant Filter based on user's role/scopes."""
-    if not token:
-        return None
-        
-    scopes = token.scopes or []
+    scopes = token.scopes if token else []
     
     if "admin" in scopes or "Admin" in scopes:
         return None  # Admin can access everything
@@ -173,11 +183,10 @@ async def fetch(id: str, token: AccessToken = CurrentAccessToken()) -> dict:
     payload = results[0].payload or {}
     
     # Enforce RBAC
-    if token:
-        doc_role = payload.get("role", "public")
-        scopes = token.scopes or []
-        if "admin" not in scopes and "Admin" not in scopes and doc_role not in scopes and doc_role != "public":
-            return {"error": f"Unauthorized. Point requires role '{doc_role}'."}
+    doc_role = payload.get("role", "public")
+    scopes = token.scopes if token else []
+    if "admin" not in scopes and "Admin" not in scopes and doc_role not in scopes and doc_role != "public":
+        return {"error": f"Unauthorized. Point requires role '{doc_role}'."}
 
     return {
         "id":           id,
