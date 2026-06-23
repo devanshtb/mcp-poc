@@ -91,7 +91,32 @@ else:
     print("Warning: Auth0 environment variables missing. Running without authentication enforcement.")
     auth = None
 
-mcp = FastMCP("Knowledge Base", lifespan=lifespan, auth=auth)
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+import sys
+
+class RawTrafficLogger(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        # We only care about the MCP tool calls, not Auth0 redirects
+        if request.url.path == "/mcp" and request.method == "POST":
+            # 1. Intercept and print the INCOMING JSON request from OpenAI
+            body_bytes = await request.body()
+            print("\n" + "="*80)
+            print("🟢 INCOMING REQUEST FROM OPENAI:")
+            print(body_bytes.decode('utf-8'))
+            print("="*80 + "\n")
+            sys.stdout.flush()
+            
+            # (We have to put the body back so FastMCP can still read it)
+            async def receive():
+                return {"type": "http.request", "body": body_bytes}
+            request._receive = receive
+            
+        # Continue normal server execution
+        response = await call_next(request)
+        return response
+
+mcp = FastMCP("Knowledge Base", lifespan=lifespan, auth=auth, middleware=[RawTrafficLogger()])
 
 # ── RBAC Utility ─────────────────────────────────────────────────────────────
 
