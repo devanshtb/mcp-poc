@@ -215,16 +215,24 @@ async def fetch(id: str, token: AccessToken = CurrentAccessToken()) -> dict:
 @mcp.tool
 async def list_documents(token: AccessToken = CurrentAccessToken()) -> dict:
     """
-    List all documents available in the knowledge base.
-    Returns document IDs, titles, and chunk counts.
+    List all documents in the Qdrant knowledge base.
+    Only returns documents the user is authorized to see based on their Auth0 scopes.
     """
+    if token:
+        print(f"\n--- [AUTH LOG] ---")
+        print(f"Token Scopes: {token.scopes}")
+        print(f"Token Claims: {token.claims}")
+        print(f"------------------\n")
+        
+    f = get_role_filter(token)
+    
     seen: dict[str, dict] = {}
     offset = None
 
     while True:
         result, offset = await qdrant.scroll(
             collection_name=COLLECTION,
-            scroll_filter=get_role_filter(token),
+            scroll_filter=f,
             with_payload=True,
             with_vectors=False,
             limit=100,
