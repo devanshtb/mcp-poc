@@ -222,6 +222,19 @@ async def list_documents(token: AccessToken = CurrentAccessToken()) -> dict:
         print(f"\n--- [AUTH LOG] ---")
         print(f"Token Scopes: {token.scopes}")
         print(f"Token Claims: {token.claims}")
+        
+        # Fetch the user's actual email from Auth0 using the Access Token
+        try:
+            import urllib.request
+            import json
+            req = urllib.request.Request("https://" + os.environ["AUTH0_DOMAIN"] + "/userinfo")
+            req.add_header("Authorization", f"Bearer {token.token}")
+            with urllib.request.urlopen(req) as response:
+                userinfo = json.loads(response.read())
+                print(f"User Email: {userinfo.get('email', 'Not provided by Auth0')}")
+        except Exception as e:
+            print(f"Failed to fetch email: {e}")
+            
         print(f"------------------\n")
         
     f = get_role_filter(token)
