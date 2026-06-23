@@ -83,7 +83,8 @@ if AUTH0_DOMAIN and AUTH0_CLIENT_ID and AUTH0_CLIENT_SECRET and AUTH0_AUDIENCE:
         client_id=AUTH0_CLIENT_ID,
         client_secret=AUTH0_CLIENT_SECRET,
         audience=AUTH0_AUDIENCE,
-        base_url=BASE_URL
+        base_url=BASE_URL,
+        resource_base_url=AUTH0_AUDIENCE
     )
     print("Auth0 provider configured.")
 else:
