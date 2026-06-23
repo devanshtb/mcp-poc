@@ -99,6 +99,11 @@ def get_role_filter(token: AccessToken | None) -> models.Filter | None:
     """Return a Qdrant Filter based on user's role/scopes."""
     scopes = token.scopes if token else []
     
+    # Auth0 adds permissions to a separate `permissions` claim when using RBAC.
+    # We should merge these into our scopes list to enforce access correctly.
+    if token and token.claims and "permissions" in token.claims:
+        scopes.extend(token.claims["permissions"])
+        
     if "admin" in scopes or "Admin" in scopes:
         return None  # Admin can access everything
     
@@ -186,6 +191,9 @@ async def fetch(id: str, token: AccessToken = CurrentAccessToken()) -> dict:
     # Enforce RBAC
     doc_role = payload.get("role", "public")
     scopes = token.scopes if token else []
+    if token and token.claims and "permissions" in token.claims:
+        scopes.extend(token.claims["permissions"])
+        
     if "admin" not in scopes and "Admin" not in scopes and doc_role not in scopes and doc_role != "public":
         return {"error": f"Unauthorized. Point requires role '{doc_role}'."}
 
