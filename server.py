@@ -91,30 +91,7 @@ else:
     print("Warning: Auth0 environment variables missing. Running without authentication enforcement.")
     auth = None
 
-from fastmcp.server.middleware import Middleware
-from fastmcp.server.middleware.base import MiddlewareContext, CallNext
-import sys
-import json
-
-class RawTrafficLogger(Middleware):
-    async def on_call_tool(self, context, call_next):
-        print("\n" + "="*80)
-        print("🟢 INCOMING MCP TOOL CALL:")
-        print(json.dumps(context.message.model_dump(), indent=2))
-        print("="*80 + "\n")
-        sys.stdout.flush()
-        
-        response = await call_next(context)
-        
-        print("\n" + "="*80)
-        print("🔵 OUTGOING MCP RESPONSE:")
-        print(json.dumps(response.model_dump() if hasattr(response, 'model_dump') else response, indent=2, default=str))
-        print("="*80 + "\n")
-        sys.stdout.flush()
-        
-        return response
-
-mcp = FastMCP("Knowledge Base", lifespan=lifespan, auth=auth, middleware=[RawTrafficLogger()])
+mcp = FastMCP("Knowledge Base", lifespan=lifespan, auth=auth)
 
 # ── RBAC Utility ─────────────────────────────────────────────────────────────
 
