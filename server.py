@@ -91,29 +91,27 @@ else:
     print("Warning: Auth0 environment variables missing. Running without authentication enforcement.")
     auth = None
 
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
+from fastmcp.server.middleware import Middleware
+from fastmcp.server.middleware.base import MiddlewareContext, CallNext
 import sys
+import json
 
-class RawTrafficLogger(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        # We only care about the MCP tool calls, not Auth0 redirects
-        if request.url.path == "/mcp" and request.method == "POST":
-            # 1. Intercept and print the INCOMING JSON request from OpenAI
-            body_bytes = await request.body()
-            print("\n" + "="*80)
-            print("🟢 INCOMING REQUEST FROM OPENAI:")
-            print(body_bytes.decode('utf-8'))
-            print("="*80 + "\n")
-            sys.stdout.flush()
-            
-            # (We have to put the body back so FastMCP can still read it)
-            async def receive():
-                return {"type": "http.request", "body": body_bytes}
-            request._receive = receive
-            
-        # Continue normal server execution
-        response = await call_next(request)
+class RawTrafficLogger(Middleware):
+    async def on_call_tool(self, context, call_next):
+        print("\n" + "="*80)
+        print("🟢 INCOMING MCP TOOL CALL:")
+        print(json.dumps(context.message.model_dump(), indent=2))
+        print("="*80 + "\n")
+        sys.stdout.flush()
+        
+        response = await call_next(context)
+        
+        print("\n" + "="*80)
+        print("🔵 OUTGOING MCP RESPONSE:")
+        print(json.dumps(response.model_dump() if hasattr(response, 'model_dump') else response, indent=2, default=str))
+        print("="*80 + "\n")
+        sys.stdout.flush()
+        
         return response
 
 mcp = FastMCP("Knowledge Base", lifespan=lifespan, auth=auth, middleware=[RawTrafficLogger()])
