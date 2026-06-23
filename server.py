@@ -210,15 +210,22 @@ async def fetch(id: str, token: AccessToken = CurrentAccessToken()) -> dict:
         },
     }
 
-# ── Tool 3: list_documents ────────────────────────────────────────────────────
+import logging
+import sys
+
+logger = logging.getLogger("mcp.auth")
+logger.setLevel(logging.INFO)
+# Also log to stdout so Render catches it immediately
+handler = logging.StreamHandler(sys.stdout)
+handler.setLevel(logging.INFO)
+logger.addHandler(handler)
 
 @mcp.tool
-async def list_documents(token: AccessToken = CurrentAccessToken()) -> str:
+async def list_documents(token: AccessToken = CurrentAccessToken()) -> dict:
     """
     List all documents in the Qdrant knowledge base.
     Only returns documents the user is authorized to see based on their Auth0 scopes.
     """
-    email = "Unknown"
     if token:
         try:
             import urllib.request
@@ -228,8 +235,19 @@ async def list_documents(token: AccessToken = CurrentAccessToken()) -> str:
             with urllib.request.urlopen(req) as response:
                 userinfo = json.loads(response.read())
                 email = userinfo.get("email", "Unknown")
+                
+                # Log the authorization details explicitly to Render logs
+                logger.info("=" * 60)
+                logger.info(f"AUTH LOG - User Email: {email}")
+                logger.info(f"AUTH LOG - Token Scopes: {token.scopes}")
+                logger.info(f"AUTH LOG - Token Claims: {token.claims}")
+                logger.info("=" * 60)
+                
+                # Force flush standard output just to be absolutely certain
+                print(f"\n[RAW PRINT] Auth User Email: {email}\n")
+                sys.stdout.flush()
         except Exception as e:
-            email = f"Error fetching email: {e}"
+            logger.error(f"Failed to fetch userinfo: {e}")
             
     f = get_role_filter(token)
     
